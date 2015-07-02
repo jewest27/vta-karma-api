@@ -1,0 +1,247 @@
+swagger: "2.0"
+info:
+  version: "0.0.1"
+  title: Trips Processor
+# during dev, should point to your local machine
+host: localhost:10010
+# basePath prefixes all resource paths 
+basePath: /v1
+# 
+schemes:
+  # tip: remove http to make production-grade
+  - http
+  - https
+# format of bodies a client can send (Content-Type)
+consumes:
+  - application/json
+# format of the responses to the client (Accepts)
+produces:
+  - application/json
+x-a127-config: {}
+x-a127-services: {}
+paths:
+  /profile:
+    x-swagger-router-controller: vta
+    x-a127-apply: {}
+    get:
+      operationId: getProfile
+      description: Gets the User Profile of the logged in user
+      parameters:
+        - name: access_token
+          in: header
+          description: Access Token from BaaS
+          required: true
+          type: string
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: "#/definitions/UserProfile"
+        default:
+          description: Error
+          schema:
+            $ref: "#/definitions/ErrorResponse"
+  /{userId}/trips:
+    x-swagger-router-controller: vta
+    x-a127-apply: {}
+    post:
+      operationId: postTrip
+      description: Accepts a new Trip from the app and returns
+      parameters:
+        - name: ride
+          in: body
+          description: The data for the trip
+          required: true
+          schema:
+            $ref: "#/definitions/TripRequest"
+        - name: userId
+          in: path
+          description: The ID of the user
+          required: true
+          type: string
+        - name: access_token
+          in: header
+          description: Access Token from BaaS
+          required: false
+          type: string
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: "#/definitions/TripResponse"
+        default:
+          description: Error
+          schema:
+            $ref: "#/definitions/ErrorResponse"
+definitions:
+  UserProfile:
+    type: "object"
+    properties:
+      uuid:
+        type: "string"
+      type:
+        type: "string"
+      name:
+        type: "string"
+      created:
+        type: "integer"
+      modified:
+        type: "integer"
+      username:
+        type: "string"
+      email:
+        type: "string"
+      activated:
+        type: "boolean"
+      picture:
+        type: "string"
+      facebook:
+        type: "object"
+        properties:
+          id:
+            type: "string"
+          email:
+            type: "string"
+          first_name:
+            type: "string"
+          gender:
+            type: "string"
+          last_name:
+            type: "string"
+          link:
+            type: "string"
+          locale:
+            type: "string"
+          name:
+            type: "string"
+          timezone:
+            type: "integer"
+          updated_time:
+            type: "string"
+          verified:
+            type: "boolean"
+      metadata:
+        type: "object"
+        properties:
+          path:
+            type: "string"
+          sets:
+            type: "object"
+            properties:
+              rolenames:
+                type: "string"
+              permissions:
+                type: "string"
+          collections:
+            type: "object"
+            properties:
+              activities:
+                type: "string"
+              devices:
+                type: "string"
+              feed:
+                type: "string"
+              groups:
+                type: "string"
+              roles:
+                type: "string"
+              following:
+                type: "string"
+              followers:
+                type: "string"
+    required:
+      - "uuid"
+      - "type"
+      - "name"
+      - "created"
+      - "modified"
+      - "username"
+      - "email"
+      - "activated"
+      - "picture"
+      - "facebook"
+      - "metadata"
+
+  TripRequest:
+    type: "object"
+    properties:
+      userId:
+        type: "string"
+      start:
+        type: "object"
+        properties:
+          latitude:
+            type: "number"
+          longitude:
+            type: "number"
+          timestamp:
+            type: "string"
+        required:
+          - "latitude"
+          - "longitude"
+          - "timestamp"
+      waypoints:
+        type: "array"
+        items:
+          -
+            type: "object"
+            properties:
+              latitude:
+                type: "number"
+              longitude:
+                type: "number"
+              timestamp:
+                type: "string"
+          -
+            type: "object"
+            properties:
+              latitude:
+                type: "number"
+              longitude:
+                type: "number"
+              timestamp:
+                type: "string"
+          -
+            type: "object"
+            properties:
+              latitude:
+                type: "number"
+              longitude:
+                type: "number"
+              timestamp:
+                type: "string"
+      stop:
+        type: "object"
+        properties:
+          latitude:
+            type: "number"
+          longitude:
+            type: "number"
+          timestamp:
+            type: "string"
+    required:
+      - "start"
+      - "waypoints"
+      - "stop"
+  TripResponse:
+    type: "object"
+    properties:
+      savings:
+        type: "object"
+        properties:
+          co2:
+            type: "integer"
+          miles:
+            type: "number"
+        required:
+          - "co2"
+          - "miles"
+    required:
+      - "savings"
+
+  ErrorResponse:
+    required:
+      - message
+    properties:
+      message:
+        type: string

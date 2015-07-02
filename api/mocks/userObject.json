@@ -1,0 +1,40 @@
+{
+  "uuid": "22921b9a-203e-11e5-be32-4995f6838fb0",
+  "type": "users",
+  "name": "Jeremy Laustername",
+  "created": 1435788694473,
+  "modified": 1435792196145,
+  "username": "fb_865330913535771",
+  "email": "jeremy@anticouni.net",
+  "activated": true,
+  "picture": "http://graph.facebook.com/865330913535771/picture",
+  "facebook": {
+    "id": "865330913535771",
+    "email": "jeremy@anticouni.net",
+    "first_name": "Jeremy",
+    "gender": "male",
+    "last_name": "Laustername",
+    "link": "https://www.facebook.com/app_scoped_user_id/865330913535771/",
+    "locale": "en_US",
+    "name": "Jeremy Laustername",
+    "timezone": -7,
+    "updated_time": "2015-06-07T02:43:04+0000",
+    "verified": true
+  },
+  "metadata": {
+    "path": "/users/22921b9a-203e-11e5-be32-4995f6838fb0",
+    "sets": {
+      "rolenames": "/users/22921b9a-203e-11e5-be32-4995f6838fb0/roles",
+      "permissions": "/users/22921b9a-203e-11e5-be32-4995f6838fb0/permissions"
+    },
+    "collections": {
+      "activities": "/users/22921b9a-203e-11e5-be32-4995f6838fb0/activities",
+      "devices": "/users/22921b9a-203e-11e5-be32-4995f6838fb0/devices",
+      "feed": "/users/22921b9a-203e-11e5-be32-4995f6838fb0/feed",
+      "groups": "/users/22921b9a-203e-11e5-be32-4995f6838fb0/groups",
+      "roles": "/users/22921b9a-203e-11e5-be32-4995f6838fb0/roles",
+      "following": "/users/22921b9a-203e-11e5-be32-4995f6838fb0/following",
+      "followers": "/users/22921b9a-203e-11e5-be32-4995f6838fb0/followers"
+    }
+  }
+}
