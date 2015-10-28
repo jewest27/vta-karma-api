@@ -10,6 +10,14 @@ var BAAS_URL = "https://api.usergrid.com";
 var BAAS_ORG_NAME = "vta";
 var BAAS_APP_NAME = "sandbox";
 
+var metersInMile = 1609.34;
+var busEmissionsPerMile = 0.107;
+var autoEmissionsPerGallon = 8.91;
+var averageFuelEfficiencyMpg = 23.6;
+var smallCarEfficiencyMpg = 40;
+var mediumCarEfficiencyMpg = 30;
+var truckEfficiencyMpg = 17;
+
 var options = {
   URI: BAAS_URL,
   orgName: BAAS_ORG_NAME,
@@ -41,8 +49,9 @@ function calculateDistanceMeters(trip) {
 
   var arrayLength = trip['waypoints'].length;
 
-  for (var i = 0; i < arrayLength; i++) {
-    var thisWaypoint = trip['waypoints'][i];
+  var d_meters = 0.0;
+
+  trip.waypoints.forEach(function (thisWaypoint) {
 
     var d_meters = geolib.getDistance(
       {latitude: lastWaypoint['latitude'], longitude: lastWaypoint['longitude']},
@@ -52,7 +61,7 @@ function calculateDistanceMeters(trip) {
 
     lastWaypoint = thisWaypoint;
     totalDistanceMeters += d_meters;
-  }
+  });
 
   d_meters = geolib.getDistance(
     {latitude: lastWaypoint['latitude'], longitude: lastWaypoint['longitude']},
@@ -125,6 +134,11 @@ function postTrip(ride_data, callback) {
 }
 
 function getNearestStop(waypoint, callback) {
+  var deferred;
+
+  if (callback == null) {
+    deferred = Q.defer()
+  }
 
   var queryString = 'select * where location within 3 of ' + waypoint['latitude'] + ', ' + waypoint['longitude'];
   console.log('getting nearest stop, ql=' + queryString);
@@ -139,27 +153,44 @@ function getNearestStop(waypoint, callback) {
     function (err, response) {
       if (err) {
         console.log(err);
-        callback(err);
+
+        if (deferred == null)
+          callback(err);
+        else
+          deferred.reject(err);
       }
       else {
         if (response && response['entities'] && response['entities'].length > 0) {
           var responseEntity = response['entities'][0];
-          callback(null, new usergrid.entity({data: responseEntity}));
+          if (deferred == null)
+            callback(null, new usergrid.entity({data: responseEntity}));
+          else
+            deferred.resolve(new usergrid.entity({data: responseEntity}));
         }
         else {
           client.getEntity({type: "stop", name: "default"},
             function (err, entity) {
               if (err) {
                 console.log(err);
-                callback(err);
+
+                if (deferred == null)
+                  callback(err);
+                else
+                  deferred.reject(err);
               }
               else {
-                callback(null, entity);
+                if (deferred == null)
+                  callback(null, entity);
+                else
+                  deferred.resolve(entity);
               }
             })
         }
       }
     });
+
+  if (deferred != null)
+    return deferred.promise;
 }
 
 function connectStartStopLocations(ride_entity, fx_callback) {
@@ -269,6 +300,36 @@ function getCo2Reference(totalDistanceMiles, averageFuelEfficiencyMpg, autoEmiss
   return gallonsRequired * autoEmissionsPerGallon;
 
 }
+
+module.exports.getTrips = function (req, res) {
+
+  var token = req.swagger.params.access_token.value;
+  var url = BAAS_URL + '/' + BAAS_ORG_NAME + '/' + BAAS_APP_NAME + '/users/me/trips';
+  var options = {
+    method: 'GET',
+    url: url,
+    headers: {
+      'Authorization': 'Bearer ' + token
+    }
+  };
+
+  request(options,
+    function (err, response, body) {
+      if (err) {
+        res.stattus(500).json({
+          message: "Error looking up /users/me/trips",
+          usergridError: err
+        });
+      }
+      else {
+        var entities = JSON.parse(body).entities;
+
+        res.json(entities);
+      }
+    });
+
+};
+
 module.exports.postTrip = function (req, res) {
 
   var ride = req.swagger.params.ride.value;
@@ -278,140 +339,149 @@ module.exports.postTrip = function (req, res) {
 
   var userId = req.swagger.params.userId.value;
 
-  var apiResponse = {};
+  var totalDistanceMeters = calculateDistanceMeters(ride);
+
+  var totalDistanceMiles = totalDistanceMeters / metersInMile;
+  var co2EmittedInKg = totalDistanceMiles * busEmissionsPerMile;
+
+  var tripSummary = {
+    distanceTraveled: {
+      'meters': totalDistanceMeters,
+      'miles': totalDistanceMeters / metersInMile
+    },
+    reference: {
+      busEmissionsPerMile: busEmissionsPerMile,
+      autoEmissionsPerGallon: autoEmissionsPerGallon,
+      averageFuelEfficiencyMpg: averageFuelEfficiencyMpg,
+      smallCarEfficiencyMpg: smallCarEfficiencyMpg,
+      mediumCarEfficiencyMpg: mediumCarEfficiencyMpg,
+      truckEfficiencyMpg: truckEfficiencyMpg
+    },
+    savings: {
+      'savingsReference': 'http://www.carbonfund.org/how-we-calculate',
+
+      'averageCarEfficiencyMpg': averageFuelEfficiencyMpg,
+      'versusAverage': getCo2Reference(totalDistanceMiles, averageFuelEfficiencyMpg, autoEmissionsPerGallon) - co2EmittedInKg,
+
+      'smallCarEfficiencyMpg': smallCarEfficiencyMpg,
+      'versusSmallCar': getCo2Reference(totalDistanceMiles, smallCarEfficiencyMpg, autoEmissionsPerGallon) - co2EmittedInKg,
+
+      'mediumCarEfficiencyMpg': mediumCarEfficiencyMpg,
+      'versusMediumCar': getCo2Reference(totalDistanceMiles, mediumCarEfficiencyMpg, autoEmissionsPerGallon) - co2EmittedInKg
+    },
+    emissions: {
+      "emitted": co2EmittedInKg,
+      "units": "kg"
+    }
+  };
 
   var start = ride['start'];
   var stop = ride['stop'];
 
-  var totalDistanceMeters = calculateDistanceMeters(ride);
+  var beginStop = getNearestStop(start);
+  var endStop = getNearestStop(stop);
 
-  var metersInMile = 1609.34;
-  var totalDistanceMiles = totalDistanceMeters / metersInMile;
-
-  var busEmissionsPerMile = 0.107;
-  var autoEmissionsPerGallon = 8.91;
-  var averageFuelEfficiencyMpg = 23.6;
-  var smallCarEfficiencyMpg = 40;
-  var mediumCarEfficiencyMpg = 30;
-  var truckEfficiencyMpg = 17;
-
-  var co2EmittedInKg = totalDistanceMiles * busEmissionsPerMile;
-
-  apiResponse['distanceTraveled'] = {
-    'meters': totalDistanceMeters,
-    'miles': totalDistanceMeters / metersInMile
-  };
-
-  apiResponse['reference'] = {
-    busEmissionsPerMile: busEmissionsPerMile,
-    autoEmissionsPerGallon: autoEmissionsPerGallon,
-    averageFuelEfficiencyMpg: averageFuelEfficiencyMpg,
-    smallCarEfficiencyMpg: smallCarEfficiencyMpg,
-    mediumCarEfficiencyMpg: mediumCarEfficiencyMpg,
-    truckEfficiencyMpg: truckEfficiencyMpg
-  };
-
-  apiResponse['savings'] = {
-    'savingsReference': 'http://www.carbonfund.org/how-we-calculate',
-
-    'averageCarEfficiencyMpg': averageFuelEfficiencyMpg,
-    'versusAverage': getCo2Reference(totalDistanceMiles, averageFuelEfficiencyMpg, autoEmissionsPerGallon) - co2EmittedInKg,
-
-    'smallCarEfficiencyMpg': smallCarEfficiencyMpg,
-    'versusSmallCar': getCo2Reference(totalDistanceMiles, smallCarEfficiencyMpg, autoEmissionsPerGallon) - co2EmittedInKg,
-
-    'mediumCarEfficiencyMpg': mediumCarEfficiencyMpg,
-    'versusMediumCar': getCo2Reference(totalDistanceMiles, mediumCarEfficiencyMpg, autoEmissionsPerGallon) - co2EmittedInKg
-  };
-
-  apiResponse['emissions'] = {
-    "emitted": co2EmittedInKg,
-    "units": "kg"
-  };
-
-  ride['summary'] = apiResponse;
-
-  getMeUser(function (err, meUser) {
-    if (err) {
-      console.log(err);
-      res.status(500).json(
-        {
-          message: "Error looking up /users/me",
-          usergridError: err
-        });
+  beginStop.then(
+    function (data) {
+      tripSummary['start'] = data;
+    },
+    function (err) {
     }
-    else
-      postTrip(ride,
-        function (err, ride_entity) {
-          if (err) {
-            console.log(err);
-            res.status(500).json({
-              message: "Error posting trip",
-              usergridError: err
-            });
-          }
-          else {
-            apiResponse['rideId'] = ride_entity.get('uuid');
+  );
 
-            async.parallel([
-                function (async_callback) {
-                  connectStartStopLocations(ride_entity,
-                    function (err, data) {
-                      if (err) {
-                        console.log(err);
-                        async_callback({
-                          message: "Error connecting ride start/stop",
-                          usergridError: err
-                        });
-                      }
-                      else {
-                        console.log('connected start/stop...');
-                        async_callback(null, data);
-                      }
-                    });
-                },
-                function (async_callback) {
-                  connectRide(meUser, ride_entity,
-                    function (err, data) {
-                      if (err) {
-                        console.log(err);
-                        async_callback({
-                          message: "Error connecting ride to user",
-                          usergridError: err
-                        });
-                      }
-                      else {
-                        console.log('connected Ride to user: ' + meUser['uuid']);
-                        async_callback(null, data);
-                      }
-                    });
-                },
-                function (async_callback) {
-                  incrementSavings(userId, apiResponse['savings'],
-                    function (err, data) {
-                      if (err) {
-                        console.log(err);
-                        async_callback({
-                          message: "Error looking incrementing savings counter",
-                          usergridError: err
-                        });
-                      }
-                      else {
-                        console.log('Incremented Savings...');
-                        async_callback(null, data);
-                      }
-                    });
-                }],
-              function (err, results) {
-                if (err) {
-                  res.json(err);
+  endStop.then(
+    function (data) {
+      tripSummary['end'] = data;
+    },
+    function (err) {
+    }
+  );
+
+  Q.allSettled([beginStop, endStop]).then(function (results) {
+    ride['summary'] = tripSummary;
+
+    getMeUser(function (err, meUser) {
+      if (err) {
+        console.log(err);
+        res.status(500).json(
+          {
+            message: "Error looking up /users/me",
+            usergridError: err
+          });
+      }
+      else
+        postTrip(ride,
+          function (err, ride_entity) {
+            if (err) {
+              console.log(err);
+              res.status(500).json({
+                message: "Error posting trip",
+                usergridError: err
+              });
+            }
+            else {
+              tripSummary['rideId'] = ride_entity.get('uuid');
+
+              async.parallel([
+                  function (async_callback) {
+                    connectStartStopLocations(ride_entity,
+                      function (err, data) {
+                        if (err) {
+                          console.log(err);
+                          async_callback({
+                            message: "Error connecting ride start/stop",
+                            usergridError: err
+                          });
+                        }
+                        else {
+                          console.log('connected start/stop...');
+                          async_callback(null, data);
+                        }
+                      });
+                  },
+                  function (async_callback) {
+                    connectRide(meUser, ride_entity,
+                      function (err, data) {
+                        if (err) {
+                          console.log(err);
+                          async_callback({
+                            message: "Error connecting ride to user",
+                            usergridError: err
+                          });
+                        }
+                        else {
+                          console.log('connected Ride to user: ' + meUser['uuid']);
+                          async_callback(null, data);
+                        }
+                      });
+                  },
+                  function (async_callback) {
+                    incrementSavings(userId, tripSummary['savings'],
+                      function (err, data) {
+                        if (err) {
+                          console.log(err);
+                          async_callback({
+                            message: "Error looking incrementing savings counter",
+                            usergridError: err
+                          });
+                        }
+                        else {
+                          console.log('Incremented Savings...');
+                          async_callback(null, data);
+                        }
+                      });
+                  }],
+                function (err, results) {
+                  if (err) {
+                    res.json(err);
+                  }
+                  else {
+                    res.json(tripSummary);
+                  }
                 }
-                else {
-                  res.json(apiResponse);
-                }
-              }
-            );
-          }
-        });
+              );
+            }
+          });
+    })
   })
 };

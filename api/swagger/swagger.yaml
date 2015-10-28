@@ -44,6 +44,26 @@ paths:
   /{userId}/trips:
     x-swagger-router-controller: vta
     x-a127-apply: {}
+    get:
+      operationId: getTrips
+      description: Retrieves trips for a user
+      parameters:
+        - name: userId
+          in: path
+          description: The ID of the user
+          required: true
+          type: string
+        - name: limit
+          in: query
+          description: The number of trips to return
+          required: false
+          type: integer
+        - name: access_token
+          in: header
+          description: Access Token from BaaS
+          required: true
+          type: string
+      responses:
     post:
       operationId: postTrip
       description: Accepts a new Trip from the app and returns
@@ -62,7 +82,7 @@ paths:
         - name: access_token
           in: header
           description: Access Token from BaaS
-          required: false
+          required: true
           type: string
       responses:
         "200":
