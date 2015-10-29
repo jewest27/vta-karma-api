@@ -4,6 +4,7 @@ var util = require('util'),
   async = require('async'),
   usergrid = require('usergrid'),
   geolib = require('geolib'),
+  Q = require('q'),
   request = require('request');
 
 var BAAS_URL = "https://api.usergrid.com";
@@ -11,8 +12,10 @@ var BAAS_ORG_NAME = "vta";
 var BAAS_APP_NAME = "sandbox";
 
 var metersInMile = 1609.34;
+
 var busEmissionsPerMile = 0.107;
 var autoEmissionsPerGallon = 8.91;
+
 var averageFuelEfficiencyMpg = 23.6;
 var smallCarEfficiencyMpg = 40;
 var mediumCarEfficiencyMpg = 30;
@@ -44,15 +47,18 @@ function connectRide(user, rideEntity, callback) {
 }
 
 function calculateDistanceMeters(trip) {
-  var lastWaypoint = trip['start'];
+  console.log('calculateDistanceMeters');
+
+  var lastWaypoint = trip['tripBegin'];
   var totalDistanceMeters = 0;
 
   var arrayLength = trip['waypoints'].length;
+  console.log('Waypoints: ' + arrayLength);
 
   var d_meters = 0.0;
 
   trip.waypoints.forEach(function (thisWaypoint) {
-
+    console.log('foreach waypoint');
     var d_meters = geolib.getDistance(
       {latitude: lastWaypoint['latitude'], longitude: lastWaypoint['longitude']},
       {latitude: thisWaypoint ['latitude'], longitude: thisWaypoint ['longitude']},
@@ -63,13 +69,16 @@ function calculateDistanceMeters(trip) {
     totalDistanceMeters += d_meters;
   });
 
+  console.log('final waypoint');
   d_meters = geolib.getDistance(
     {latitude: lastWaypoint['latitude'], longitude: lastWaypoint['longitude']},
-    {latitude: trip['stop']['latitude'], longitude: trip['stop']['longitude']},
+    {latitude: trip['tripEnd']['latitude'], longitude: trip['tripEnd']['longitude']},
     1
   );
 
   totalDistanceMeters += d_meters;
+
+  console.log('distance: ' + totalDistanceMeters);
 
   return totalDistanceMeters;
 }
@@ -87,7 +96,7 @@ function incrementSavings(userId, savings, callback) {
 
   counterData['counters'][counterName] = Math.round(savings['versusAverage'], 1);
 
-  var eventUrl = 'http://api.usergrid.com/vta/sandbox/events';
+  var eventUrl = BAAS_URL + '/' + BAAS_ORG_NAME + '/' + BAAS_APP_NAME + '/events';
 
   console.log('Counter Name: ' + counterName);
 
@@ -139,8 +148,8 @@ function getNearestStop(waypoint, callback) {
   if (callback == null) {
     deferred = Q.defer()
   }
-
-  var queryString = 'select * where location within 3 of ' + waypoint['latitude'] + ', ' + waypoint['longitude'];
+  //console.log('Nearest: ' + JSON.stringify(waypoint));
+  var queryString = 'select * where location within 10 of ' + waypoint['latitude'] + ', ' + waypoint['longitude'];
   console.log('getting nearest stop, ql=' + queryString);
 
   var options = {
@@ -197,14 +206,14 @@ function connectStartStopLocations(ride_entity, fx_callback) {
 
   async.parallel([
       function (callback) {
-        getNearestStop(ride_entity.get('start'),
+        getNearestStop(ride_entity.get('tripBegin'),
           function (err, ride_start_entity) {
             if (err) {
               console.log(err);
               callback(err);
             }
             else {
-              ride_entity.connect("startsAt", ride_start_entity,
+              ride_entity.connect("beginsAt", ride_start_entity,
                 function (err, data) {
                   if (err) {
                     console.log(err);
@@ -219,7 +228,7 @@ function connectStartStopLocations(ride_entity, fx_callback) {
           });
       },
       function (callback) {
-        getNearestStop(ride_entity.get('stop'),
+        getNearestStop(ride_entity.get('tripEnd'),
           function (err, trip_stop_entity) {
             if (err) {
               console.log(err);
@@ -253,14 +262,182 @@ function connectStartStopLocations(ride_entity, fx_callback) {
 
 }
 
-function getMeUser(callback) {
+function getCounterValue(token, counterName) {
+  var deferred = Q.defer();
 
-  var meUrl = BAAS_URL + '/' + BAAS_ORG_NAME + '/' + BAAS_APP_NAME + '/users/me';
+  var meUrl = BAAS_URL + '/' + BAAS_ORG_NAME + '/' + BAAS_APP_NAME + '/counters?counter=' + counterName;
+
   var options = {
     method: 'GET',
     url: meUrl,
     headers: {
-      'Authorization': 'Bearer ' + client.getToken()
+      'Authorization': 'Bearer ' + token
+    }
+  };
+
+  request(options,
+    function (err, response, body) {
+
+      if (err) {
+        deferred.reject(err);
+      }
+      else {
+        //todo: handle non 200
+
+        if (response.statusCode == 200) {
+          var response_json = JSON.parse(body);
+          var found = false;
+
+          response_json.counters.forEach(function (counter) {
+            if (counter.name == counterName) {
+              found = true;
+              deferred.resolve(counter.values[0].value)
+            }
+          });
+
+          if (!found)
+            deferred.reject('Unable to get counter value: ' + counterName);
+        }
+      }
+    });
+
+  return deferred.promise;
+}
+
+function getSavings(token, profileData, callback) {
+  var d = new Date();
+
+  var response = {
+    month: 10,
+    year: 100,
+    all: 1000
+  };
+
+  //console.log('USER: '+JSON.stringify(profileData));
+
+  var userId = profileData.username;
+  var counterAll = 'savings.co2.' + userId;
+  var counterYear = 'savings.co2.' + userId + '.' + d.getFullYear();
+  var counterMonth = 'savings.co2.' + userId + '.' + d.getFullYear() + '.' + (d.getMonth() + 1);
+
+  var promise_counter_all = getCounterValue(token, counterAll);
+  var promise_counter_month = getCounterValue(token, counterMonth);
+  var promise_counter_year = getCounterValue(token, counterYear);
+
+  promise_counter_year.then(function (data) {
+    response.year = data;
+  });
+
+  promise_counter_month.then(function (data) {
+    response.month = data;
+  });
+
+  promise_counter_all.then(function (data) {
+    response.all = data;
+  });
+
+  Q.allSettled([promise_counter_all, promise_counter_month, promise_counter_year]).then(function () {
+    callback(null, response);
+  });
+}
+
+function getMeUser(token, callback) {
+
+  var meUrl = BAAS_URL + '/' + BAAS_ORG_NAME + '/' + BAAS_APP_NAME + '/users/me?access_token=' + token;
+  console.log(meUrl);
+  var options = {
+    method: 'GET',
+    url: meUrl,
+    headers: {
+      'Authorization': 'Bearer ' + token
+    }
+  };
+
+  request(options,
+    function (err, response, body) {
+
+      if (err) {
+
+        console.log(err);
+
+        if (callback)
+          callback({
+            err: err
+          });
+
+      }
+      else {
+
+        console.log("Response status code " + response.statusCode + ": " + body);
+
+        if (response.statusCode != 200) {
+          if (callback)
+            callback({
+              usergridStatusCode: response.statusCode,
+              usergridResponse: JSON.parse(body)
+            });
+
+        }
+        else {
+          var user_response = JSON.parse(body);
+
+          if (callback)
+            callback(null, user_response.entities[0]);
+        }
+      }
+    });
+}
+
+module.exports.getRideById = function (req, res) {
+  //var token = req.swagger.params.access_token.value;
+
+  var url = BAAS_URL + '/' + BAAS_ORG_NAME + '/' + BAAS_APP_NAME + '/rides/' + req.swagger.params.tripId.value;
+  var options = {
+    method: 'GET',
+    url: url,
+    headers: {}
+  };
+  //'Authorization': 'Bearer ' + token
+
+  console.log(url);
+
+  request(options,
+    function (err, response, body) {
+      if (err) {
+        console.log(err);
+        res.status(500).json({
+          message: "Error looking up stops",
+          usergridError: err
+        });
+      }
+      else {
+        if (response.statusCode != 200) {
+          res.json(body);
+        } else {
+          var entities = JSON.parse(body).entities;
+          res.json(entities);
+        }
+      }
+    });
+};
+
+module.exports.getToken = function (req, res) {
+  console.log('getting token..');
+
+  var meUrl = BAAS_URL + '/' + BAAS_ORG_NAME + '/' + BAAS_APP_NAME + '/auth/facebook';
+
+  var fb_access_token = req.swagger.params.fb_access_token.value;
+
+  console.log('fb_access_token=' + fb_access_token);
+
+  var options = {
+    method: 'GET',
+    url: meUrl,
+    qs: {
+      'fb_access_token': fb_access_token
+    },
+    headers: {
+      'Content-Type': 'application/json'
     }
   };
 
@@ -270,17 +447,21 @@ function getMeUser(callback) {
         callback(err);
       }
       else {
-        callback(null, JSON.parse(body).entities[0]);
+        if (response.statusCode != 200) {
+          res.json(body);
+        }
+        else {
+          var user_response = JSON.parse(body);
+          res.json(user_response);
+        }
       }
     });
-}
+};
 
 module.exports.getProfile = function (req, res) {
 
-  client.setToken(req.swagger.params.access_token.value);
-
   getMeUser(req.swagger.params.access_token.value,
-    function (err, data) {
+    function (err, profile_data) {
       if (err) {
         res.status(500).json(
           {
@@ -289,7 +470,13 @@ module.exports.getProfile = function (req, res) {
           });
       }
       else {
-        res.json(data);
+        getSavings(req.swagger.params.access_token.value,
+          profile_data, function (err, savings_data) {
+            console.log('SAVINGS: '+JSON.stringify(savings_data));
+            profile_data['savings'] = savings_data;
+
+            res.json(profile_data);
+          });
       }
     }
   );
@@ -301,29 +488,92 @@ function getCo2Reference(totalDistanceMiles, averageFuelEfficiencyMpg, autoEmiss
 
 }
 
-module.exports.getTrips = function (req, res) {
-
+module.exports.getStopById = function (req, res) {
   var token = req.swagger.params.access_token.value;
-  var url = BAAS_URL + '/' + BAAS_ORG_NAME + '/' + BAAS_APP_NAME + '/users/me/trips';
+
+  var url = BAAS_URL + '/' + BAAS_ORG_NAME + '/' + BAAS_APP_NAME + '/stops/' + req.swagger.params.stopId.value;
   var options = {
     method: 'GET',
     url: url,
-    headers: {
-      'Authorization': 'Bearer ' + token
-    }
+    headers: {}
   };
+  //'Authorization': 'Bearer ' + token
+
+  console.log(url);
 
   request(options,
     function (err, response, body) {
       if (err) {
-        res.stattus(500).json({
-          message: "Error looking up /users/me/trips",
+        console.log(err);
+        res.status(500).json({
+          message: "Error looking up stops",
           usergridError: err
         });
       }
       else {
         var entities = JSON.parse(body).entities;
+        res.json(entities);
+      }
+    });
+};
 
+module.exports.getNearestStops = function (req, res) {
+  var token = req.swagger.params.access_token.value;
+
+  var url = BAAS_URL + '/' + BAAS_ORG_NAME + '/' + BAAS_APP_NAME + '/stops?ql=select * where location within ' + req.swagger.params.radius.value + ' of ' + req.swagger.params.latitude.value + ',' + req.swagger.params.longitude.value;
+  var options = {
+    method: 'GET',
+    url: url,
+    headers: {}
+  };
+  //'Authorization': 'Bearer ' + token
+
+  console.log(url);
+
+  request(options,
+    function (err, response, body) {
+      if (err) {
+        console.log(err);
+        res.stattus(500).json({
+          message: "Error looking up stops",
+          usergridError: err
+        });
+      }
+      else {
+        var entities = JSON.parse(body).entities;
+        res.json(entities);
+      }
+    });
+}
+
+module.exports.getRides = function (req, res) {
+
+  var token = req.swagger.params.access_token.value;
+  var userId = req.swagger.params.userId.value;
+  var url = BAAS_URL + '/' + BAAS_ORG_NAME + '/' + BAAS_APP_NAME + '/users/' + userId + '/rides';
+  var options = {
+    method: 'GET',
+    url: url,
+    headers: {}
+  };
+
+  //'Authorization': 'Bearer ' + token
+
+  request(options,
+    function (err, response, body) {
+
+      if (err) {
+        res.stattus(500).json({
+          message: "Error looking up /users/me/trips",
+          usergridError: err
+        });
+
+      } else if (response.statusCode != 200) {
+        res.status(500).json("Response status code " + response.statusCode + ": " + body);
+      }
+
+      else {
+        var entities = JSON.parse(body).entities;
         res.json(entities);
       }
     });
@@ -331,7 +581,7 @@ module.exports.getTrips = function (req, res) {
 };
 
 module.exports.postTrip = function (req, res) {
-
+  console.log('posting trip..');
   var ride = req.swagger.params.ride.value;
   var token = req.swagger.params.access_token.value;
 
@@ -375,15 +625,16 @@ module.exports.postTrip = function (req, res) {
     }
   };
 
-  var start = ride['start'];
-  var stop = ride['stop'];
+  var start = ride['tripBegin'];
+  var stop = ride['tripEnd'];
 
   var beginStop = getNearestStop(start);
   var endStop = getNearestStop(stop);
 
   beginStop.then(
     function (data) {
-      tripSummary['start'] = data;
+      console.log('retrieved begin stop: ' + JSON.stringify(data));
+      tripSummary['start'] = data.data;
     },
     function (err) {
     }
@@ -391,16 +642,18 @@ module.exports.postTrip = function (req, res) {
 
   endStop.then(
     function (data) {
-      tripSummary['end'] = data;
+      console.log('retrieved finish stop: ' + JSON.stringify(data));
+      tripSummary['finish'] = data.data;
     },
     function (err) {
     }
   );
 
   Q.allSettled([beginStop, endStop]).then(function (results) {
+    //console.log('settled');
     ride['summary'] = tripSummary;
 
-    getMeUser(function (err, meUser) {
+    getMeUser(token, function (err, meUser) {
       if (err) {
         console.log(err);
         res.status(500).json(
@@ -420,7 +673,10 @@ module.exports.postTrip = function (req, res) {
               });
             }
             else {
-              tripSummary['rideId'] = ride_entity.get('uuid');
+              var tripId = ride_entity.get('uuid');
+              console.log('Trip ID: ' + tripId);
+
+              tripSummary['rideId'] = tripId;
 
               async.parallel([
                   function (async_callback) {

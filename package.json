@@ -13,6 +13,7 @@
     "request": "",
     "async": "",
     "usergrid": "",
+    "q": "",
     "geolib": "",
     "volos-analytics-apigee": "",
     "volos-analytics-common": "",
