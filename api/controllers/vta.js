@@ -27,6 +27,7 @@ var options = {
   appName: BAAS_APP_NAME,
   authType: usergrid.AUTH_APP_USER
 };
+
 var LOG = false;
 var client = new usergrid.client(options);
 
@@ -343,7 +344,7 @@ function getSavings(token, profileData, callback) {
 
 function getMeUser(token, callback) {
 
-  var meUrl = BAAS_URL + '/' + BAAS_ORG_NAME + '/' + BAAS_APP_NAME + '/users/me?access_token=' + token;
+  var meUrl = BAAS_URL + '/' + BAAS_ORG_NAME + '/' + BAAS_APP_NAME + '/users/me';
   console.log(meUrl);
   var options = {
     method: 'GET',
@@ -389,15 +390,16 @@ function getMeUser(token, callback) {
 }
 
 module.exports.getRideById = function (req, res) {
-  //var token = req.swagger.params.access_token.value;
+  var token = req.swagger.params.access_token.value;
 
   var url = BAAS_URL + '/' + BAAS_ORG_NAME + '/' + BAAS_APP_NAME + '/rides/' + req.swagger.params.tripId.value;
   var options = {
     method: 'GET',
     url: url,
-    headers: {}
+    headers: {
+      'Authorization': 'Bearer ' + token
+    }
   };
-  //'Authorization': 'Bearer ' + token
 
   console.log(url);
 
@@ -472,7 +474,7 @@ module.exports.getProfile = function (req, res) {
       else {
         getSavings(req.swagger.params.access_token.value,
           profile_data, function (err, savings_data) {
-            console.log('SAVINGS: '+JSON.stringify(savings_data));
+            console.log('SAVINGS: ' + JSON.stringify(savings_data));
             profile_data['savings'] = savings_data;
 
             res.json(profile_data);
@@ -495,9 +497,10 @@ module.exports.getStopById = function (req, res) {
   var options = {
     method: 'GET',
     url: url,
-    headers: {}
+    headers: {
+      'Authorization': 'Bearer ' + token
+    }
   };
-  //'Authorization': 'Bearer ' + token
 
   console.log(url);
 
@@ -524,9 +527,10 @@ module.exports.getNearestStops = function (req, res) {
   var options = {
     method: 'GET',
     url: url,
-    headers: {}
+    headers: {
+      'Authorization': 'Bearer ' + token
+    }
   };
-  //'Authorization': 'Bearer ' + token
 
   console.log(url);
 
@@ -549,15 +553,16 @@ module.exports.getNearestStops = function (req, res) {
 module.exports.getRides = function (req, res) {
 
   var token = req.swagger.params.access_token.value;
-  var userId = req.swagger.params.userId.value;
-  var url = BAAS_URL + '/' + BAAS_ORG_NAME + '/' + BAAS_APP_NAME + '/users/' + userId + '/rides';
+
+  var url = BAAS_URL + '/' + BAAS_ORG_NAME + '/' + BAAS_APP_NAME + '/users/me/rides';
   var options = {
     method: 'GET',
     url: url,
-    headers: {}
+    headers: {
+      'Authorization': 'Bearer ' + token
+    }
   };
 
-  //'Authorization': 'Bearer ' + token
 
   request(options,
     function (err, response, body) {
@@ -574,7 +579,7 @@ module.exports.getRides = function (req, res) {
 
       else {
         var entities = JSON.parse(body).entities;
-        res.json(entities);
+        res.json({rides: entities});
       }
     });
 

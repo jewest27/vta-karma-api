@@ -39,32 +39,13 @@ paths:
           description: Error
           schema:
             $ref: "#/definitions/ErrorResponse"
-  /rides/{tripId}:
+  /rides/{rideId}:
     x-swagger-router-controller: vta
     get:
       description: Retrieves a specific ride by ID
       operationId: getRideById
       parameters:
-        - name: tripId
-          required: true
-          type: string
-          in: path
-      responses:
-        "200":
-          description: Success
-          schema:
-            $ref: "#/definitions/TokenResponse"
-        default:
-          description: Error
-          schema:
-            $ref: "#/definitions/ErrorResponse"
-  /rides/{tripId}/beginsAt:
-    x-swagger-router-controller: vta
-    get:
-      description: Retrieves a stop nearest the starting point of a ride
-      operationId: getRideById
-      parameters:
-        - name: tripId
+        - name: rideId
           required: true
           type: string
           in: path
@@ -78,13 +59,33 @@ paths:
           schema:
             $ref: "#/definitions/ErrorResponse"
 
-  /rides/{tripId}/endsAt:
+  /rides/{rideId}/beginsAt:
+    x-swagger-router-controller: vta
+    get:
+      description: Retrieves a stop nearest the starting point of a ride
+      operationId: getRideById
+      parameters:
+        - name: rideId
+          required: true
+          type: string
+          in: path
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: "#/definitions/TokenResponse"
+        default:
+          description: Error
+          schema:
+            $ref: "#/definitions/ErrorResponse"
+
+  /rides/{rideId}/endsAt:
     x-swagger-router-controller: vta
     get:
       description: Retrieves a stop nearest the ending point of a ride
       operationId: getRideById
       parameters:
-        - name: tripId
+        - name: rideId
           required: true
           type: string
           in: path
@@ -161,7 +162,8 @@ paths:
           description: Error
           schema:
             $ref: "#/definitions/ErrorResponse"
-  /profile:
+
+  /me/profile:
     x-swagger-router-controller: vta
     x-a127-apply: {}
     get:
@@ -183,21 +185,16 @@ paths:
           schema:
             $ref: "#/definitions/ErrorResponse"
 
-  /users/{userId}/trips:
+  /me/rides:
     x-swagger-router-controller: vta
     x-a127-apply: {}
     get:
       operationId: getRides
       description: Retrieves trips for a user
       parameters:
-        - name: userId
-          in: path
-          description: The ID of the user
-          required: true
-          type: string
         - name: limit
           in: query
-          description: The number of trips to return
+          description: The number of rides to return
           required: false
           type: integer
         - name: access_token
@@ -225,11 +222,6 @@ paths:
           required: true
           schema:
             $ref: "#/definitions/TripRequest"
-        - name: userId
-          in: path
-          description: The ID of the user
-          required: true
-          type: string
         - name: access_token
           in: header
           description: Access Token from BaaS
@@ -244,6 +236,7 @@ paths:
           description: Error
           schema:
             $ref: "#/definitions/ErrorResponse"
+
 definitions:
   UserProfile:
     type: "object"
