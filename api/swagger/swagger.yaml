@@ -18,9 +18,41 @@ consumes:
 produces:
   - application/json
 x-a127-config: {}
-x-a127-services: {}
+x-a127-services:
+  ride-cache:
+    provider: volos-cache-memory
+    options:
+      name: ride-cache
+      ttl: 300000
+  profile-cache:
+    provider: volos-cache-memory
+    options:
+      name: profile-cache
+      ttl: 300000
+  user-cache:
+    provider: volos-cache-memory
+    options:
+      name: user-cache
+      ttl: 3600000
+  rides-cache:
+    provider: volos-cache-memory
+    options:
+      name: rides-cache
+      ttl: 3600000
+  token-cache:
+    provider: volos-cache-memory
+    options:
+      name: token-cache
+      ttl: 3600000
+  nearest-stop-cache:
+    provider: volos-cache-memory
+    options:
+      name: nearest-stop-cache
+      ttl: 3600000
 paths:
   /token:
+    x-a127-apply:
+      token-cache: {}
     x-swagger-router-controller: vta
     get:
       description: Retrieves a BaaS token given a Facebook token
@@ -40,6 +72,8 @@ paths:
           schema:
             $ref: "#/definitions/ErrorResponse"
   /rides/{rideId}:
+    x-a127-apply:
+      rides-cache: {}
     x-swagger-router-controller: vta
     get:
       description: Retrieves a specific ride by ID
@@ -187,7 +221,8 @@ paths:
 
   /me/rides:
     x-swagger-router-controller: vta
-    x-a127-apply: {}
+    x-a127-apply: 
+      rides-cache: {}
     get:
       operationId: getRides
       description: Retrieves trips for a user
@@ -213,7 +248,7 @@ paths:
             $ref: "#/definitions/ErrorResponse"
 
     post:
-      operationId: postTrip
+      operationId: postRide
       description: Accepts a new Trip from the app and returns
       parameters:
         - name: ride

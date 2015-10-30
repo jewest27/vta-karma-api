@@ -7,7 +7,7 @@ import time
 start_time = calendar.timegm(time.gmtime()) * 1000
 print start_time
 
-trip_data = {
+ride_data = {
     "tripBegin": {
         "latitude": 37.249785940999999,
         "longitude": -121.91032390399999,
@@ -51,21 +51,22 @@ headers = {
 
 r = requests.get(url=token_endpoint + '', headers=headers)
 
+if r.status_code != 200:
+    print r.text
+
 if r.status_code == 200:
     token_response = r.json()
     access_token = token_response.get('access_token')
-    user_id = token_response.get('user', {}).get('username')
 
-    user_endpoint = '%s/users/%s' % (url_base, user_id)
-
-    user_trips_endpoint = '%s/trips' % user_endpoint
+    profile_endpoint = '%s/me/profile' % url_base
+    user_trips_endpoint = '%s/me/rides' % url_base
 
     print 'Access Token: ' + access_token
 
     headers['access_token'] = access_token
 
     r = requests.post(url=user_trips_endpoint,
-                      data=json.dumps(trip_data),
+                      data=json.dumps(ride_data),
                       headers=headers)
 
     if r.status_code != 200:
@@ -90,7 +91,7 @@ stops = r.json()
 print r.text
 
 
-user_profile_url = '{url_base}/profile'.format(url_base=url_base)
+user_profile_url = '{url_base}/me/profile'.format(url_base=url_base)
 
 r = requests.get(url=user_profile_url,
                  headers=headers)
