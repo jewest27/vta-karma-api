@@ -52,7 +52,11 @@ x-a127-services:
 paths:
   /token:
     x-a127-apply:
-      token-cache: {}
+      token-cache: 
+        key:
+          helper: cache-helper
+          function: fb_access_token
+
     x-swagger-router-controller: vta
     get:
       description: Retrieves a BaaS token given a Facebook token
@@ -73,7 +77,11 @@ paths:
             $ref: "#/definitions/ErrorResponse"
   /rides/{rideId}:
     x-a127-apply:
-      rides-cache: {}
+      rides-cache: 
+        key:
+          helper: cache-helper
+          function: access_token
+
     x-swagger-router-controller: vta
     get:
       description: Retrieves a specific ride by ID
@@ -222,7 +230,10 @@ paths:
   /me/rides:
     x-swagger-router-controller: vta
     x-a127-apply: 
-      rides-cache: {}
+      rides-cache: 
+        key:
+          helper: cache-helper
+          function: access_token
     get:
       operationId: getRides
       description: Retrieves trips for a user

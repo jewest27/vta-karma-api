@@ -38,6 +38,7 @@ ride_data = {
 }
 
 url_base = 'http://localhost:10010/v1'
+# url_base = 'http://vta-prod.apigee.net/karma/v1'
 
 fb_access_token = sys.argv[1]
 
@@ -50,6 +51,8 @@ headers = {
 }
 
 r = requests.get(url=token_endpoint + '', headers=headers)
+
+print r.status_code
 
 if r.status_code != 200:
     print r.text
@@ -64,31 +67,31 @@ if r.status_code == 200:
     print 'Access Token: ' + access_token
 
     headers['access_token'] = access_token
-
-    r = requests.post(url=user_trips_endpoint,
-                      data=json.dumps(ride_data),
-                      headers=headers)
-
-    if r.status_code != 200:
-        print r.text
-    else:
-        r = requests.get(url=user_trips_endpoint,
-                         headers=headers)
-        trips = r.json()
-        print r.text
-        print 'TRIPS!! count: %s' % len(trips)
-
-location = {
-    "latitude": 37.389401339999999,
-    "longitude": -121.85650542
-}
-
-stops_url = '{url_base}/stops?latitude={latitude}&longitude={longitude}&radius=10'.format(url_base=url_base, **location)
-
-r = requests.get(url=stops_url,
-                 headers=headers)
-stops = r.json()
-print r.text
+#
+#     r = requests.post(url=user_trips_endpoint,
+#                       data=json.dumps(ride_data),
+#                       headers=headers)
+#
+#     if r.status_code != 200:
+#         print r.text
+#
+#     r = requests.get(url=user_trips_endpoint,
+#                      headers=headers)
+#     trips = r.json()
+#     print r.text
+#     print 'TRIPS!! count: %s' % len(trips)
+#
+# location = {
+#     "latitude": 37.389401339999999,
+#     "longitude": -121.85650542
+# }
+#
+# stops_url = '{url_base}/stops?latitude={latitude}&longitude={longitude}&radius=10'.format(url_base=url_base, **location)
+#
+# r = requests.get(url=stops_url,
+#                  headers=headers)
+# stops = r.json()
+# print r.text
 
 
 user_profile_url = '{url_base}/me/profile'.format(url_base=url_base)
