@@ -2,106 +2,38 @@
 
 var util = require('util'),
   async = require('async'),
-  usergrid = require('usergrid'),
-  geolib = require('geolib'),
-  Q = require('q'),
-  cache_memory = require('volos-cache-memory'),
+  caching = require('../helpers/caching.js'),
+  helper = require('../helpers/helper.js'),
+  constants = require('../helpers/constants.js'),
   request = require('request');
 
-var BAAS_URL = "https://api.usergrid.com";
-var BAAS_ORG_NAME = "vta";
-var BAAS_APP_NAME = "sandbox";
 
-var APP_URL = BAAS_URL + '/' + BAAS_ORG_NAME + '/' + BAAS_APP_NAME;
-
-var metersInMile = 1609.34;
-
-var busEmissionsPerMile = 0.107;
-var autoEmissionsPerGallon = 8.91;
-
-var averageFuelEfficiencyMpg = 23.6;
-var smallCarEfficiencyMpg = 40;
-var mediumCarEfficiencyMpg = 30;
-var truckEfficiencyMpg = 17;
-
-var profile_cache = cache_memory.create('profile-cache');
-var nearest_stop_cache = cache_memory.create('nearest-cache');
-
-var options = {
-  URI: BAAS_URL,
-  orgName: BAAS_ORG_NAME,
-  appName: BAAS_APP_NAME,
-  authType: usergrid.AUTH_APP_USER
-};
-
-var client = new usergrid.client(options);
-
-function calculateDistanceMeters(trip) {
-  console.log('calculateDistanceMeters');
-
-  var lastWaypoint = trip['tripBegin'];
-  var totalDistanceMeters = 0;
-
-  var d_meters = 0.0;
-
-  trip.waypoints.forEach(function (thisWaypoint) {
-    var d_meters = geolib.getDistance(
-      {latitude: lastWaypoint['latitude'], longitude: lastWaypoint['longitude']},
-      {latitude: thisWaypoint ['latitude'], longitude: thisWaypoint ['longitude']},
-      1
-    );
-
-    lastWaypoint = thisWaypoint;
-    totalDistanceMeters += d_meters;
-  });
-
-  d_meters = geolib.getDistance(
-    {latitude: lastWaypoint['latitude'], longitude: lastWaypoint['longitude']},
-    {latitude: trip['tripEnd']['latitude'], longitude: trip['tripEnd']['longitude']},
-    1
-  );
-
-  totalDistanceMeters += d_meters;
-
-  console.log('distance: ' + totalDistanceMeters);
-
-  return totalDistanceMeters;
-}
-
-function incrementCounters(userId, ride_entity, callback) {
+function incrementCounters(token, userId, ride_entity, callback) {
   var rideSummary = ride_entity.summary;
 
   console.log('== Incrementing counters... ');
 
   async.parallel([
       function (async_callback) {
-        incrementSavings(userId, rideSummary['savings'],
+        incrementSavings(token, userId, rideSummary['savings'],
           function (err, data) {
             if (err) {
               console.log(err);
-              async_callback({
-                message: "Error looking incrementing savings counter",
-                usergridError: err
-              });
+              async_callback(helper.build_error("Error looking incrementing savings counter", err));
             }
             else {
-              console.log('Incremented Savings...');
               async_callback(null, data);
             }
           });
       },
       function (async_callback) {
-        incrementDistance(userId, rideSummary,
+        incrementDistance(token, userId, rideSummary,
           function (err, data) {
             if (err) {
               console.log(err);
-              async_callback({
-                message: "Error looking incrementing savings counter",
-                usergridError: err
-              });
+              async_callback(helper.build_error("Error looking incrementing savings counter", err));
             }
             else {
-              console.log('Incremented Distance...');
               async_callback(null, data);
             }
           });
@@ -117,29 +49,33 @@ function incrementCounters(userId, ride_entity, callback) {
           callback(null, results);
       }
     });
-
 }
 
-function incrementSavings(userId, savings, callback) {
+function incrementSavings(token, userId, savings, callback) {
   console.log('Incrementing Savings...');
 
   var d = new Date();
 
   var counterName = 'savings.co2.' + userId.username + '.' + d.getFullYear() + '.' + (d.getMonth() + 1);
+
+  postCounterValue(token, counterName, Math.round(savings['versusAverage'], 1), callback);
+}
+
+function postCounterValue(token, counterName, value, callback) {
+
   var counterData = {
     'timestamp': 0,
     'counters': {}
   };
 
-  counterData['counters'][counterName] = Math.round(savings['versusAverage'], 1);
-
-  console.log('Counter Name: ' + counterName);
+  counterData['counters'][counterName] = value;
 
   request({
-      url: APP_URL + '/events',
+      url: constants.APP_URL + '/events',
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token
       },
       body: JSON.stringify(counterData)
     },
@@ -156,48 +92,23 @@ function incrementSavings(userId, savings, callback) {
     });
 }
 
-function incrementDistance(userId, tripSummary, callback) {
+
+function incrementDistance(token, userId, tripSummary, callback) {
   console.log('Incrementing distance...');
 
   var d = new Date();
 
   var counterName = 'distance.' + userId.username + '.' + d.getFullYear() + '.' + (d.getMonth() + 1);
-  var counterData = {
-    'timestamp': 0,
-    'counters': {}
-  };
 
-  counterData['counters'][counterName] = Math.round(tripSummary.distanceTraveled.miles, 1);
+  postCounterValue(token, counterName, Math.round(tripSummary.distanceTraveled.miles, 1), callback);
 
-  console.log('Counter Name: ' + counterName);
-
-  request({
-      url: APP_URL + '/events',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(counterData)
-    },
-    function (error, response, body) {
-      if (error) {
-        callback(error)
-      } else if (response.statusCode != 200) {
-        callback("Response status code " + response.statusCode + ": " + body)
-      }
-      else {
-        var sendMe = JSON.parse(body);
-        callback(null, sendMe)
-      }
-    });
 }
 
 function postTrip(token, ride_data, callback) {
-  if (ride_data)
-    console.log('posting ride data...');
+  console.log('postTrip');
 
   request({
-      url: APP_URL + '/rides',
+      url: constants.APP_URL + '/rides',
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -207,18 +118,13 @@ function postTrip(token, ride_data, callback) {
     },
     function (err, response, body) {
       if (err) {
-        console.log('Error making trip post request: ' + err);
-
         if (callback)
           callback(err)
       } else if (response.statusCode != 200) {
-        console.log("Response status code " + response.statusCode + ": " + body);
-
         if (callback)
           callback("Response status code " + response.statusCode + ": " + body)
       }
       else {
-        console.log('Trip posted to API');
         var sendMe = JSON.parse(body);
         if (callback) callback(null, sendMe.entities[0])
       }
@@ -226,125 +132,87 @@ function postTrip(token, ride_data, callback) {
 }
 
 function getNearestStop(token, waypoint, callback) {
-  var deferred;
 
-  if (!callback) {
-    deferred = Q.defer()
-  }
-
-  var cache = nearest_stop_cache;
   var key = JSON.stringify(waypoint);
 
   if (!key) {
-    console.trace("-- Key must be defined!!!!!!");
-
     if (callback)
       callback("Key must be defined");
-    if (deferred)
-      deferred.reject("Key must be defined");
   }
   else {
-    checkCache(cache, key, function (err, data) {
-        if (err) {
-          console.log('Error getting nearest: ' + err);
-          if (callback)
-            callback(err);
-          if (deferred) {
-            console.log('reject deferred');
-            deferred.reject(err);
-          }
-        }
-        else if (data) {
-          if (callback)
-            callback(null, JSON.parse(data));
-          if (deferred) {
-            deferred.resolve(data);
-          }
-        }
-        else {
-          request({
-              url: APP_URL + '/stops',
-              headers: {
-                'Authorization': 'Bearer ' + token
-              },
-              qs: {
-                ql: 'select * where location within 10 of ' + waypoint['latitude'] + ', ' + waypoint['longitude']
-              }
+    caching.stopCacheLookup(key, function (err, data) {
+
+      if (err) {
+        console.log('Error getting nearest: ' + err);
+
+        if (callback)
+          callback(err);
+      }
+
+      else if (data) {
+        if (callback)
+          callback(null, JSON.parse(data));
+      }
+
+      else {
+        request({
+            url: constants.APP_URL + '/stops',
+            headers: {
+              'Authorization': 'Bearer ' + token
             },
-            function (err, response, body) {
-              if (err) {
-                console.log('Error getting nearby: ' + err);
+            qs: {
+              ql: 'select * where location within 10 of ' + waypoint['latitude'] + ', ' + waypoint['longitude']
+            }
+          },
+          function (err, response, body) {
+            if (err) {
+              console.log('Error getting nearby: ' + err);
 
-                if (deferred) {
-                  console.log('reject deferred');
-                  deferred.reject(err);
-                }
-                if (callback)
-                  callback(err);
-              }
-              else {
+              if (callback)
+                callback(err);
+            }
 
-                if (response.statusCode == 200) {
+            else {
+              if (response.statusCode == 200) {
+                var response_json = JSON.parse(body);
 
-                  var response_json = JSON.parse(body);
+                if (response_json['entities'] && response_json['entities'].length > 0) {
+                  var responseEntity = response_json['entities'][0];
 
-                  if (response_json['entities'] && response_json['entities'].length > 0) {
-                    var responseEntity = response_json['entities'][0];
+                  if (callback)
+                    callback(null, responseEntity);
 
-                    //console.log('using stop: ' + responseEntity.name);
-
-                    if (deferred)
-                      deferred.resolve(responseEntity);
-                    if (callback)
-                      callback(null, responseEntity);
-
-                    if (cache)
-                      cache.set(key, JSON.stringify(responseEntity));
-                  }
-                  else {
-                    // todo: better solution
-                    console.log('using default stop!');
-                    client.getEntity({type: "stop", name: "default"},
-                      function (err, entity) {
-                        if (err) {
-                          console.log(err);
-
-                          if (deferred)
-                            deferred.reject(err);
-                          else if (callback)
-                            callback(err);
-                        }
-                        else {
-                          if (cache)
-                            cache.set(key, JSON.stringify(entity));
-
-                          if (deferred)
-                            deferred.resolve(entity);
-                          else if (callback)
-                            callback(null, entity);
-                        }
-                      })
-                  }
+                  caching.stopCacheSet(key, JSON.stringify(responseEntity));
                 }
                 else {
-                  console.log('BAD RESPONSE! code=' + response.statusCode + ' body: ' + body);
+                  console.log('Did not find a stop within 10 meters of: ' + key + '!');
+                  callback(null, {
+                    name: 'default',
+                    type: 'stop'
+                  });
                 }
               }
-            });
-        }
+              else {
+                callback(helper.build_error('Error looking up closest stop tp: ' + key, body, response.statusCode));
+              }
+            }
+          });
       }
-    );
+    });
   }
-
-  if (deferred)
-    return deferred.promise;
 }
 
 function connectEntities(token, source_entity, target_entity, verb, callback) {
-  console.log(APP_URL + '/' + source_entity['type'] + '/' + source_entity.uuid + '/' + verb + '/' + target_entity.uuid);
+  //console.log(constants.APP_URL + '/' + source_entity['type'] + '/' + source_entity.uuid + '/' + verb + '/' + target_entity.uuid);
+  console.log('connectEntities');
+
+  if (!source_entity['type'])
+    console.log(JSON.stringify(source_entity));
+
+  var url = constants.APP_URL + '/' + source_entity['type'] + '/' + source_entity.uuid + '/' + verb + '/' + (target_entity.uuid ? target_entity.uuid : (target_entity.type + '/' + target_entity.name));
 
   request({
-      url: APP_URL + '/' + source_entity['type'] + '/' + source_entity.uuid + '/' + verb + '/' + target_entity.uuid,
+      url: url,
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -353,10 +221,13 @@ function connectEntities(token, source_entity, target_entity, verb, callback) {
     },
     function (error, response, body) {
       if (error) {
-        callback(build_error('Error connecting entities', error))
+        callback(helper.build_error('Error connecting entities', error, null, url))
+
       } else if (response.statusCode != 200) {
-        callback(build_error('Error connecting entities', body, response.statusCode));
+        console.trace('ERROR: ' + url);
+        callback(helper.build_error('Error connecting entities', body, response.statusCode, url));
       }
+
       else {
         callback(null, JSON.parse(body))
       }
@@ -367,35 +238,35 @@ function connectStartStopLocations(token, ride_entity, fx_callback) {
   console.log('connectStartStopLocations');
 
   async.parallel({
-      beginsAt: function (callback) {
-        async.waterfall([
-            function (w_callback) {
-              getNearestStop(token, ride_entity.tripBegin, w_callback);
-            },
-            function (nearestBegin, w_callback) {
-              connectEntities(token, ride_entity, nearestBegin, 'beginsAt', w_callback)
-            }
-          ],
-          callback);
-      },
-      endsAt: function (callback) {
-        async.waterfall([
+    beginsAt: function (callback) {
+      async.waterfall([
           function (w_callback) {
-            getNearestStop(token, ride_entity.tripEnd, w_callback);
+            getNearestStop(token, ride_entity.tripBegin, w_callback);
           },
           function (nearestBegin, w_callback) {
-            connectEntities(token, ride_entity, nearestBegin, 'endsAt', w_callback)
+            connectEntities(token, ride_entity, nearestBegin, 'beginsAt', w_callback)
           }
-        ], callback);
-      }
-    },    fx_callback);
+        ],
+        callback);
+    },
+    endsAt: function (callback) {
+      async.waterfall([
+        function (w_callback) {
+          getNearestStop(token, ride_entity.tripEnd, w_callback);
+        },
+        function (nearestBegin, w_callback) {
+          connectEntities(token, ride_entity, nearestBegin, 'endsAt', w_callback)
+        }
+      ], callback);
+    }
+  }, fx_callback);
 }
 
 function getCounterValue(token, counterName, callback) {
 
   request({
       method: 'GET',
-      url: APP_URL + '/counters?counter=' + counterName,
+      url: constants.APP_URL + '/counters?counter=' + counterName,
       headers: {
         'Authorization': 'Bearer ' + token
       }
@@ -406,7 +277,7 @@ function getCounterValue(token, counterName, callback) {
       }
       else {
         if (response.statusCode != 200) {
-          callback(build_error('Unable to get counter value: ' + counterName, body, response.statusCode));
+          callback(helper.build_error('Unable to get counter value: ' + counterName, body, response.statusCode));
         }
         else {
           var response_json = JSON.parse(body);
@@ -428,7 +299,7 @@ function getCounterValue(token, counterName, callback) {
           });
 
           if (!found)
-            callback(build_error('Unable to get counter value: ' + counterName));
+            callback(helper.build_error('Unable to get counter value: ' + counterName));
         }
       }
     });
@@ -440,6 +311,8 @@ function getSavings(token, profileData, callback) {
   var d = new Date();
 
   async.parallel({
+    unit: async.constant('Kg'),
+
     all: function (callback) {
       getCounterValue(token, 'savings.co2.' + profileData.username, callback)
     },
@@ -452,41 +325,29 @@ function getSavings(token, profileData, callback) {
   }, callback);
 }
 
-function checkCache(cache, key, callback) {
+function getDistance(token, profileData, callback) {
+  console.log('getDistance');
 
-  if (!key instanceof String) {
-    console.trace('Key is not instance of string!');
-  }
+  var d = new Date();
 
-  if (cache) {
-    cache.get(key, function (err, data) {
-
-      if (err) {
-        console.log(err);
-      }
-
-      if (data)
-        console.log('Cache hit on ' + cache.name + ' for key: ' + key);
-      else
-        console.log('Cache miss on ' + cache.name + ' for key: ' + key);
-
-      if (callback)
-        callback(err, data);
-    });
-  }
-  else {
-    console.log('Attempted to check cache which does not exist!');
-    if (callback)
-      callback(null, null);
-  }
+  async.parallel({
+    unit: async.constant('mi'),
+    all: function (callback) {
+      getCounterValue(token, 'distance.' + profileData.username, callback)
+    },
+    year: function (callback) {
+      getCounterValue(token, 'distance.' + profileData.username + '.' + d.getFullYear(), callback);
+    },
+    month: function (callback) {
+      getCounterValue(token, 'distance.' + profileData.username + '.' + d.getFullYear() + '.' + (d.getMonth() + 1), callback)
+    }
+  }, callback);
 }
 
 function getMeUser(token, callback) {
   console.log('getMeUser');
 
-  var cache = profile_cache;
-
-  checkCache(cache, token, function (err, data) {
+  caching.profileCacheLookup(token, function (err, data) {
     if (err) {
       if (callback)
         callback(err);
@@ -498,7 +359,7 @@ function getMeUser(token, callback) {
     else {
       request({
           method: 'GET',
-          url: APP_URL + '/users/me',
+          url: constants.APP_URL + '/users/me',
           headers: {
             'Authorization': 'Bearer ' + token
           }
@@ -512,17 +373,16 @@ function getMeUser(token, callback) {
           else {
             if (response.statusCode != 200) {
               if (callback)
-                callback(build_error('Error getting /users/me', body, response.statusCode));
+                callback(helper.build_error('Error getting /users/me', body, response.statusCode));
             }
             else {
-              console.log('Retrieved user: ' + body);
+              //console.log('Retrieved user: ' + body);
               var user_response = JSON.parse(body);
 
               if (callback)
                 callback(null, user_response.entities[0]);
 
-              if (cache)
-                cache.set(token, body)
+              caching.profileCacheSet(token, JSON.stringify(user_response.entities[0]));
             }
           }
         });
@@ -533,7 +393,7 @@ function getMeUser(token, callback) {
 module.exports.getRideById = function (req, res) {
   request({
       method: 'GET',
-      url: APP_URL + '/rides/' + req.swagger.params.tripId.value,
+      url: constants.APP_URL + '/rides/' + req.swagger.params.tripId.value,
       headers: {
         'Authorization': 'Bearer ' + req.swagger.params.access_token.value
       }
@@ -541,7 +401,7 @@ module.exports.getRideById = function (req, res) {
     function (err, response, body) {
       if (err) {
         console.log(err);
-        res.status(500).json(build_error("Error looking up stops", err));
+        res.status(500).json(helper.build_error("Error looking up stops", err));
       }
       else {
         if (response.statusCode != 200) {
@@ -559,7 +419,7 @@ module.exports.getToken = function (req, res) {
 
   request({
       method: 'GET',
-      url: APP_URL + '/auth/facebook',
+      url: constants.APP_URL + '/auth/facebook',
       qs: {
         'fb_access_token': req.swagger.params.fb_access_token.value
       },
@@ -586,32 +446,46 @@ module.exports.getToken = function (req, res) {
 
 module.exports.getProfile = function (req, res) {
 
+  if(req.swagger.params.skipCache){
+    caching.clearProfileCache()
+  }
+
   getMeUser(req.swagger.params.access_token.value,
     function (err, profile_data) {
       if (err) {
-        res.status(500).json(build_error("Error looking up /users/me", err));
+        res.status(500).json(helper.build_error("Error looking up /users/me", err));
       }
       else {
-        getSavings(req.swagger.params.access_token.value, profile_data,
-          function (err, savings_data) {
-            profile_data['savings'] = savings_data;
+        async.parallel({
+            savings: function (callback) {
+              getSavings(req.swagger.params.access_token.value, profile_data, callback);
+            },
+            distance: function (callback) {
+              getDistance(req.swagger.params.access_token.value, profile_data, callback);
+            }
+          },
+          function (err, results) {
+            if (err) {
+              console.log(err);
+              res.json(profile_data);
+            }
 
-            res.json(profile_data);
+            if (results) {
+              profile_data['savings'] = results.savings;
+
+              profile_data['distance'] = results.distance;
+              profile_data['facebook']['location'] = 'Canadia, CA';
+              res.json(profile_data);
+            }
           });
       }
-    }
-  );
+    });
 };
-
-function getCo2Reference(totalDistanceMiles, averageFuelEfficiencyMpg, autoEmissionsPerGallon) {
-  var gallonsRequired = totalDistanceMiles / averageFuelEfficiencyMpg;
-  return gallonsRequired * autoEmissionsPerGallon;
-}
 
 module.exports.getStopById = function (req, res) {
   request({
       method: 'GET',
-      url: APP_URL + '/stops/' + req.swagger.params.stopId.value,
+      url: constants.APP_URL + '/stops/' + req.swagger.params.stopId.value,
       headers: {
         'Authorization': 'Bearer ' + req.swagger.params.access_token.value
       }
@@ -619,14 +493,11 @@ module.exports.getStopById = function (req, res) {
     function (err, response, body) {
       if (err) {
         console.log(err);
-        res.status(500).json(build_error("Error looking up stops", err));
+        res.status(500).json(helper.build_error("Error looking up stops", err));
       }
       else {
         var entities = JSON.parse(body).entities;
         res.json(entities);
-
-        if (cache)
-          cache.set(key, JSON.stringify(entities));
       }
     });
 };
@@ -634,7 +505,7 @@ module.exports.getStopById = function (req, res) {
 module.exports.getNearestStops = function (req, res) {
   request({
       method: 'GET',
-      url: APP_URL + '/stops',
+      url: constants.APP_URL + '/stops',
       qs: {
         ql: 'select * where location within ' + req.swagger.params.radius.value + ' of ' + req.swagger.params.latitude.value + ',' + req.swagger.params.longitude.value
       },
@@ -645,7 +516,7 @@ module.exports.getNearestStops = function (req, res) {
     function (err, response, body) {
       if (err) {
         console.log(err);
-        res.status(500).json(build_error("Error looking up stops", err));
+        res.status(500).json(helper.build_error("Error looking up stops", err));
       }
       else {
         res.json(JSON.parse(body).entities);
@@ -657,7 +528,7 @@ module.exports.getRides = function (req, res) {
 
   request({
       method: 'GET',
-      url: APP_URL + '/users/me/rides',
+      url: constants.APP_URL + '/users/me/rides',
       headers: {
         'Authorization': 'Bearer ' + req.swagger.params.access_token.value
       }
@@ -665,7 +536,7 @@ module.exports.getRides = function (req, res) {
     function (err, response, body) {
 
       if (err) {
-        res.stattus(500).json(build_error("Error looking up /users/me/trips", err));
+        res.stattus(500).json(helper.build_error("Error looking up /users/me/trips", err));
       } else if (response.statusCode != 200) {
         res.status(500).json("Response status code " + response.statusCode + ": " + body);
       }
@@ -678,54 +549,39 @@ module.exports.getRides = function (req, res) {
     });
 };
 
-function build_error(message, err, statusCode) {
-  var response = {};
-
-  if (message)
-    response['message'] = message;
-
-  if (statusCode)
-    response['statusCode'] = statusCode;
-
-  if (err)
-    response['targetError'] = err;
-
-  return response
-}
-
 module.exports.postRide = function (req, res) {
   var ride_data = req.swagger.params.ride.value;
   var token = req.swagger.params.access_token.value;
 
-  var totalDistanceMeters = calculateDistanceMeters(ride_data);
+  var totalDistanceMeters = helper.calculateDistanceMeters(ride_data);
 
-  var totalDistanceMiles = totalDistanceMeters / metersInMile;
-  var co2EmittedInKg = totalDistanceMiles * busEmissionsPerMile;
+  var totalDistanceMiles = totalDistanceMeters / constants.metersInMile;
+  var co2EmittedInKg = totalDistanceMiles * constants.busEmissionsPerMile;
 
   var rideSummary = {
     distanceTraveled: {
       'meters': totalDistanceMeters,
-      'miles': totalDistanceMeters / metersInMile
+      'miles': totalDistanceMeters / constants.metersInMile
     },
     reference: {
-      busEmissionsPerMile: busEmissionsPerMile,
-      autoEmissionsPerGallon: autoEmissionsPerGallon,
-      averageFuelEfficiencyMpg: averageFuelEfficiencyMpg,
-      smallCarEfficiencyMpg: smallCarEfficiencyMpg,
-      mediumCarEfficiencyMpg: mediumCarEfficiencyMpg,
-      truckEfficiencyMpg: truckEfficiencyMpg
+      busEmissionsPerMile: constants.busEmissionsPerMile,
+      autoEmissionsPerGallon: constants.autoEmissionsPerGallon,
+      averageFuelEfficiencyMpg: constants.averageFuelEfficiencyMpg,
+      smallCarEfficiencyMpg: constants.smallCarEfficiencyMpg,
+      mediumCarEfficiencyMpg: constants.mediumCarEfficiencyMpg,
+      truckEfficiencyMpg: constants.truckEfficiencyMpg
     },
     savings: {
       'savingsReference': 'http://www.carbonfund.org/how-we-calculate',
 
-      'averageCarEfficiencyMpg': averageFuelEfficiencyMpg,
-      'versusAverage': getCo2Reference(totalDistanceMiles, averageFuelEfficiencyMpg, autoEmissionsPerGallon) - co2EmittedInKg,
+      'averageCarEfficiencyMpg': constants.averageFuelEfficiencyMpg,
+      'versusAverage': helper.getCo2Reference(totalDistanceMiles, constants.averageFuelEfficiencyMpg, constants.autoEmissionsPerGallon) - co2EmittedInKg,
 
-      'smallCarEfficiencyMpg': smallCarEfficiencyMpg,
-      'versusSmallCar': getCo2Reference(totalDistanceMiles, smallCarEfficiencyMpg, autoEmissionsPerGallon) - co2EmittedInKg,
+      'smallCarEfficiencyMpg': constants.smallCarEfficiencyMpg,
+      'versusSmallCar': helper.getCo2Reference(totalDistanceMiles, constants.smallCarEfficiencyMpg, constants.autoEmissionsPerGallon) - co2EmittedInKg,
 
-      'mediumCarEfficiencyMpg': mediumCarEfficiencyMpg,
-      'versusMediumCar': getCo2Reference(totalDistanceMiles, mediumCarEfficiencyMpg, autoEmissionsPerGallon) - co2EmittedInKg
+      'mediumCarEfficiencyMpg': constants.mediumCarEfficiencyMpg,
+      'versusMediumCar': helper.getCo2Reference(totalDistanceMiles, constants.mediumCarEfficiencyMpg, constants.autoEmissionsPerGallon) - co2EmittedInKg
     },
     emissions: {
       "emitted": co2EmittedInKg,
@@ -737,33 +593,45 @@ module.exports.postRide = function (req, res) {
 
   getMeUser(token, function (err, user) {
     if (err) {
-      res.status(500).json(build_error("Error looking up /users/me", err));
+      console.log(err);
+      res.status(500).json(helper.build_error("Error looking up /users/me", err));
     }
+
     else {
+      console.log('got ME');
+
+      ride_data['username'] = user.username;
 
       postTrip(token, ride_data,
         function (err, ride_entity) {
           if (err) {
-            res.status(500).json(build_error("Error posting trip", err));
+            console.log(err);
+            res.status(500).json(helper.build_error("Error posting trip", err));
           }
           else {
+            console.log('trip posted...');
+
             async.parallel({
                 connectStartStopLocations: function (async_callback) {
+                  console.log('connectStartStopLocations');
                   connectStartStopLocations(token, ride_entity, async_callback);
                 },
                 connectUserToRide: function (async_callback) {
+                  console.log('connectUserToRide');
                   connectEntities(token, user, ride_entity, 'rides', async_callback);
                 },
                 incrementCounters: function (async_callback) {
-                  incrementCounters(user, ride_entity, async_callback);
+                  console.log('incrementCounters');
+                  incrementCounters(token, user, ride_entity, async_callback);
                 }
               },
               function (err, results) {
                 if (err) {
+                  console.log(err);
                   res.json(err);
                 }
                 else {
-                  console.log(JSON.stringify(results));
+                  //console.log(JSON.stringify(results));
                   res.json(rideSummary);
                 }
               });

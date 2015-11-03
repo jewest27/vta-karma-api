@@ -217,6 +217,11 @@ paths:
           description: Access Token from BaaS
           required: true
           type: string
+        - name: skip-cache
+          in: header
+          description: set to true to skip http cache and clear
+          required: false
+          type: boolean
       responses:
         "200":
           description: Success
