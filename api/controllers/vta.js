@@ -56,7 +56,7 @@ function incrementSavings(token, userId, savings, callback) {
 
   var d = new Date();
 
-  var counterName = 'savings.co2.' + userId.username + '.' + d.getFullYear() + '.' + (d.getMonth() + 1);
+  var counterName = 'savings.co2.lb.' + userId.username + '.' + d.getFullYear() + '.' + (d.getMonth() + 1);
 
   postCounterValue(token, counterName, Math.round(savings['versusAverage'], 1), callback);
 }
@@ -101,7 +101,6 @@ function incrementDistance(token, userId, tripSummary, callback) {
   var counterName = 'distance.' + userId.username + '.' + d.getFullYear() + '.' + (d.getMonth() + 1);
 
   postCounterValue(token, counterName, Math.round(tripSummary.distanceTraveled.miles, 1), callback);
-
 }
 
 function postTrip(token, ride_data, callback) {
@@ -241,7 +240,7 @@ function connectStartStopLocations(token, ride_entity, fx_callback) {
     beginsAt: function (callback) {
       async.waterfall([
           function (w_callback) {
-            getNearestStop(token, ride_entity.tripBegin, w_callback);
+            getNearestStop(token, ride_entity.start, w_callback);
           },
           function (nearestBegin, w_callback) {
             connectEntities(token, ride_entity, nearestBegin, 'beginsAt', w_callback)
@@ -252,7 +251,7 @@ function connectStartStopLocations(token, ride_entity, fx_callback) {
     endsAt: function (callback) {
       async.waterfall([
         function (w_callback) {
-          getNearestStop(token, ride_entity.tripEnd, w_callback);
+          getNearestStop(token, ride_entity.stop, w_callback);
         },
         function (nearestBegin, w_callback) {
           connectEntities(token, ride_entity, nearestBegin, 'endsAt', w_callback)
@@ -311,17 +310,18 @@ function getSavings(token, profileData, callback) {
   var d = new Date();
 
   async.parallel({
-    unit: async.constant('Kg'),
+    unit: async.constant('lb'),
 
     all: function (callback) {
-      getCounterValue(token, 'savings.co2.' + profileData.username, callback)
+      getCounterValue(token, 'savings.co2.lb.' + profileData.username, callback)
     },
     year: function (callback) {
-      getCounterValue(token, 'savings.co2.' + profileData.username + '.' + d.getFullYear(), callback);
+      getCounterValue(token, 'savings.co2.lb.' + profileData.username + '.' + d.getFullYear(), callback);
     },
     month: function (callback) {
-      getCounterValue(token, 'savings.co2.' + profileData.username + '.' + d.getFullYear() + '.' + (d.getMonth() + 1), callback)
-    }
+      getCounterValue(token, 'savings.co2.lb.' + profileData.username + '.' + d.getFullYear() + '.' + (d.getMonth() + 1), callback)
+    },
+    latest: async.constant(14.2)
   }, callback);
 }
 
@@ -340,7 +340,8 @@ function getDistance(token, profileData, callback) {
     },
     month: function (callback) {
       getCounterValue(token, 'distance.' + profileData.username + '.' + d.getFullYear() + '.' + (d.getMonth() + 1), callback)
-    }
+    },
+    latest: async.constant(14.2)
   }, callback);
 }
 
@@ -415,7 +416,7 @@ module.exports.getRideById = function (req, res) {
 };
 
 module.exports.getToken = function (req, res) {
-  console.log('getting token..');
+  console.log('getting token, ' + req.swagger.params.fb_access_token.value);
 
   request({
       method: 'GET',
@@ -444,9 +445,18 @@ module.exports.getToken = function (req, res) {
     });
 };
 
+module.exports.clearCache = function (req, res) {
+
+  caching.clearCache(req.swagger.params.cacheName.value, function (err) {
+    if (err)
+      res.status(400).json('Cache not found: ' + req.swagger.params.cacheName.value);
+    else res.json('OK');
+  })
+};
+
 module.exports.getProfile = function (req, res) {
 
-  if(req.swagger.params.skipCache){
+  if (req.swagger.params.skipCache) {
     caching.clearProfileCache()
   }
 
@@ -503,11 +513,14 @@ module.exports.getStopById = function (req, res) {
 };
 
 module.exports.getNearestStops = function (req, res) {
+
+  console.log('select * where location within ' + req.swagger.params.radius.value + ' of ' + req.swagger.params.latitude.value + ',' + req.swagger.params.longitude.value + ' and not ignore=true');
+
   request({
       method: 'GET',
       url: constants.APP_URL + '/stops',
       qs: {
-        ql: 'select * where location within ' + req.swagger.params.radius.value + ' of ' + req.swagger.params.latitude.value + ',' + req.swagger.params.longitude.value
+        ql: 'select * where location within ' + req.swagger.params.radius.value + ' of ' + req.swagger.params.latitude.value + ',' + req.swagger.params.longitude.value + ' and not ignore=true'
       },
       headers: {
         'Authorization': 'Bearer ' + req.swagger.params.access_token.value
@@ -519,7 +532,8 @@ module.exports.getNearestStops = function (req, res) {
         res.status(500).json(helper.build_error("Error looking up stops", err));
       }
       else {
-        res.json(JSON.parse(body).entities);
+        console.log(body);
+        res.json({stops: JSON.parse(body).entities});
       }
     });
 };
@@ -553,6 +567,17 @@ module.exports.postRide = function (req, res) {
   var ride_data = req.swagger.params.ride.value;
   var token = req.swagger.params.access_token.value;
 
+  var ride_cache = req.a127.resource('rides-cache');
+  console.log('CLEARING CACHE');
+
+  ride_cache.delete(token, function (err, data) {
+    if (err) console.log(err);
+
+    else {
+      console.log('CLEARED CACHE FOR TOKEN: ' + data);
+    }
+  });
+
   var totalDistanceMeters = helper.calculateDistanceMeters(ride_data);
 
   var totalDistanceMiles = totalDistanceMeters / constants.metersInMile;
@@ -572,20 +597,21 @@ module.exports.postRide = function (req, res) {
       truckEfficiencyMpg: constants.truckEfficiencyMpg
     },
     savings: {
+      'units': 'lb',
       'savingsReference': 'http://www.carbonfund.org/how-we-calculate',
 
       'averageCarEfficiencyMpg': constants.averageFuelEfficiencyMpg,
-      'versusAverage': helper.getCo2Reference(totalDistanceMiles, constants.averageFuelEfficiencyMpg, constants.autoEmissionsPerGallon) - co2EmittedInKg,
+      'versusAverage': helper.getCo2ReferenceInLb(totalDistanceMiles, constants.averageFuelEfficiencyMpg, constants.autoEmissionsPerGallon) - co2EmittedInKg,
 
       'smallCarEfficiencyMpg': constants.smallCarEfficiencyMpg,
-      'versusSmallCar': helper.getCo2Reference(totalDistanceMiles, constants.smallCarEfficiencyMpg, constants.autoEmissionsPerGallon) - co2EmittedInKg,
+      'versusSmallCar': helper.getCo2ReferenceInLb(totalDistanceMiles, constants.smallCarEfficiencyMpg, constants.autoEmissionsPerGallon) - co2EmittedInKg,
 
       'mediumCarEfficiencyMpg': constants.mediumCarEfficiencyMpg,
-      'versusMediumCar': helper.getCo2Reference(totalDistanceMiles, constants.mediumCarEfficiencyMpg, constants.autoEmissionsPerGallon) - co2EmittedInKg
+      'versusMediumCar': helper.getCo2ReferenceInLb(totalDistanceMiles, constants.mediumCarEfficiencyMpg, constants.autoEmissionsPerGallon) - co2EmittedInKg
     },
     emissions: {
       "emitted": co2EmittedInKg,
-      "units": "kg"
+      "units": "lb"
     }
   };
 

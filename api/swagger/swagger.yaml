@@ -50,6 +50,26 @@ x-a127-services:
       name: nearest-stop-cache
       ttl: 3600000
 paths:
+  /caches/{cacheName}:
+    x-swagger-router-controller: vta
+    delete:
+      description: Clears the specified cache
+      operationId: clearCache
+      parameters:
+        - name: cacheName
+          in: path
+          type: string
+          required: true
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: "#/definitions/StringResponse"
+        default:
+          description: Error
+          schema:
+            $ref: "#/definitions/ErrorResponse"
+
   /token:
     x-a127-apply:
       token-cache: 
@@ -75,13 +95,96 @@ paths:
           description: Error
           schema:
             $ref: "#/definitions/ErrorResponse"
-  /rides/{rideId}:
+
+  /me/profile:
+    x-swagger-router-controller: vta
+    x-a127-apply: {}
+    get:
+      operationId: getProfile
+      description: Gets the User Profile of the logged in user including the co2 savings
+      parameters:
+        - name: access_token
+          in: header
+          description: Access Token from BaaS
+          required: true
+          type: string
+        - name: skip-cache
+          in: header
+          description: set to true to skip http cache and clear
+          required: false
+          type: boolean
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: "#/definitions/UserProfile"
+        default:
+          description: Error
+          schema:
+            $ref: "#/definitions/ErrorResponse"
+
+  /me/rides:
+    x-swagger-router-controller: vta
+#    x-a127-apply:
+#      rides-cache:
+#        key:
+#          helper: cache-helper
+#          function: access_token
+    get:
+      operationId: getRides
+      description: Retrieves trips for a user
+      parameters:
+        - name: limit
+          in: query
+          description: The number of rides to return
+          required: false
+          type: integer
+        - name: access_token
+          in: header
+          description: Access Token from BaaS
+          required: true
+          type: string
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: "#/definitions/TripResponse"
+        default:
+          description: Error
+          schema:
+            $ref: "#/definitions/ErrorResponse"
+
+    post:
+      operationId: postRide
+      description: Accepts a new Trip from the app and returns
+      parameters:
+        - name: ride
+          in: body
+          description: The data for the trip
+          required: true
+          schema:
+            $ref: "#/definitions/TripRequest"
+        - name: access_token
+          in: header
+          description: Access Token from BaaS
+          required: true
+          type: string
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: "#/definitions/TripResponse"
+        default:
+          description: Error
+          schema:
+            $ref: "#/definitions/ErrorResponse"
+
+  /me/rides/{rideId}:
     x-a127-apply:
       rides-cache: 
         key:
           helper: cache-helper
           function: access_token
-
     x-swagger-router-controller: vta
     get:
       description: Retrieves a specific ride by ID
@@ -101,7 +204,7 @@ paths:
           schema:
             $ref: "#/definitions/ErrorResponse"
 
-  /rides/{rideId}/beginsAt:
+  /me/rides/{rideId}/beginsAt:
     x-swagger-router-controller: vta
     get:
       description: Retrieves a stop nearest the starting point of a ride
@@ -121,7 +224,7 @@ paths:
           schema:
             $ref: "#/definitions/ErrorResponse"
 
-  /rides/{rideId}/endsAt:
+  /me/rides/{rideId}/endsAt:
     x-swagger-router-controller: vta
     get:
       description: Retrieves a stop nearest the ending point of a ride
@@ -205,88 +308,6 @@ paths:
           schema:
             $ref: "#/definitions/ErrorResponse"
 
-  /me/profile:
-    x-swagger-router-controller: vta
-    x-a127-apply: {}
-    get:
-      operationId: getProfile
-      description: Gets the User Profile of the logged in user including the co2 savings 
-      parameters:
-        - name: access_token
-          in: header
-          description: Access Token from BaaS
-          required: true
-          type: string
-        - name: skip-cache
-          in: header
-          description: set to true to skip http cache and clear
-          required: false
-          type: boolean
-      responses:
-        "200":
-          description: Success
-          schema:
-            $ref: "#/definitions/UserProfile"
-        default:
-          description: Error
-          schema:
-            $ref: "#/definitions/ErrorResponse"
-
-  /me/rides:
-    x-swagger-router-controller: vta
-    x-a127-apply: 
-      rides-cache: 
-        key:
-          helper: cache-helper
-          function: access_token
-    get:
-      operationId: getRides
-      description: Retrieves trips for a user
-      parameters:
-        - name: limit
-          in: query
-          description: The number of rides to return
-          required: false
-          type: integer
-        - name: access_token
-          in: header
-          description: Access Token from BaaS
-          required: true
-          type: string
-      responses:
-        "200":
-          description: Success
-          schema:
-            $ref: "#/definitions/TripResponse"
-        default:
-          description: Error
-          schema:
-            $ref: "#/definitions/ErrorResponse"
-
-    post:
-      operationId: postRide
-      description: Accepts a new Trip from the app and returns
-      parameters:
-        - name: ride
-          in: body
-          description: The data for the trip
-          required: true
-          schema:
-            $ref: "#/definitions/TripRequest"
-        - name: access_token
-          in: header
-          description: Access Token from BaaS
-          required: true
-          type: string
-      responses:
-        "200":
-          description: Success
-          schema:
-            $ref: "#/definitions/TripResponse"
-        default:
-          description: Error
-          schema:
-            $ref: "#/definitions/ErrorResponse"
 
 definitions:
   UserProfile:
@@ -382,7 +403,7 @@ definitions:
     properties:
       userId:
         type: "string"
-      tripBegin:
+      start:
         type: "object"
         properties:
           latitude:
@@ -425,7 +446,7 @@ definitions:
                 type: "number"
               timestamp:
                 type: "number"
-      tripEnd:
+      stop:
         type: "object"
         properties:
           latitude:
@@ -435,9 +456,9 @@ definitions:
           timestamp:
             type: "number"
     required:
-      - "tripBegin"
+      - "start"
       - "waypoints"
-      - "tripEnd"
+      - "stop"
   TripResponse:
     type: "object"
     properties:
@@ -468,6 +489,8 @@ definitions:
           - "miles"
     required:
       - "savings"
+  StringResponse:
+    type: "string"
 
   ErrorResponse:
     required:

@@ -8,7 +8,7 @@ start_time = calendar.timegm(time.gmtime()) * 1000
 print start_time
 
 ride1 = {
-    "tripBegin": {
+    "start": {
         "latitude": 37.249785940999999,
         "longitude": -121.91032390399999,
         "timestamp": start_time
@@ -30,7 +30,7 @@ ride1 = {
             "timestamp": start_time + (10 * 3 * 1000)
         }
     ],
-    "tripEnd": {
+    "stop": {
         "latitude": 37.418700340999997,
         "longitude": -122.14516253399999,
         "timestamp": start_time + (10 * 4 * 1000)
@@ -132,31 +132,31 @@ trips = {
 
 def build_ride(waypoints, trip_start=start_time):
     return {
-        "tripBegin": {
+        "start": {
             "latitude": float(waypoints[0]['latitude']),
-            "longitude": float(waypoints[0]['latitude']),
+            "longitude": float(waypoints[0]['longitude']),
             "timestamp": trip_start
         },
         "waypoints": [
             {
                 "latitude": float(waypoints[1]['latitude']),
-                "longitude": float(waypoints[1]['latitude']),
+                "longitude": float(waypoints[1]['longitude']),
                 "timestamp": trip_start + (10 * 1 * 1000)
             },
             {
                 "latitude": float(waypoints[2]['latitude']),
-                "longitude": float(waypoints[2]['latitude']),
+                "longitude": float(waypoints[2]['longitude']),
                 "timestamp": trip_start + (10 * 2 * 1000)
             },
             {
                 "latitude": float(waypoints[3]['latitude']),
-                "longitude": float(waypoints[3]['latitude']),
+                "longitude": float(waypoints[3]['longitude']),
                 "timestamp": trip_start + (10 * 3 * 1000)
             }
         ],
-        "tripEnd": {
+        "stop": {
             "latitude": float(waypoints[4]['latitude']),
-            "longitude": float(waypoints[4]['latitude']),
+            "longitude": float(waypoints[4]['longitude']),
             "timestamp": trip_start + (10 * 4 * 1000)
         }
     }
@@ -164,6 +164,16 @@ def build_ride(waypoints, trip_start=start_time):
 
 # url_base = 'http://localhost:10010/v1'
 url_base = 'http://vta-prod.apigee.net/karma/v1'
+
+caches = [
+    'profile_cache',
+    'nearest_stop_cache'
+]
+
+for cache in caches:
+    cache_url = '%s/caches/%s' % (url_base, cache)
+    r = requests.delete(url=cache_url)
+    print '[%s]: %s' % (r.status_code, cache_url)
 
 fb_access_token = sys.argv[1]
 
@@ -175,11 +185,12 @@ headers = {
     'content-type': 'application/json'
 }
 
-r = requests.get(url=token_endpoint + '', headers=headers)
+r = requests.get(url=token_endpoint, headers=headers)
 
 print r.status_code
 
 if r.status_code != 200:
+    print '[%s]: %s' % (r.status_code, token_endpoint)
     print r.text
     exit()
 
@@ -187,7 +198,7 @@ token_response = r.json()
 access_token = token_response.get('access_token')
 
 profile_endpoint = '%s/me/profile' % url_base
-user_trips_endpoint = '%s/me/rides' % url_base
+user_rides_endpoint = '%s/me/rides' % url_base
 
 print 'Access Token: ' + access_token
 
@@ -201,19 +212,20 @@ for number, trip_points in trips.iteritems():
     ride_data = build_ride(trip_points)
     # print user_trips_endpoint
     print 'posting ride...'
-    r = requests.post(url=user_trips_endpoint,
+    r = requests.post(url=user_rides_endpoint,
                       data=json.dumps(ride_data),
                       headers=headers)
 
     print '[%s]: %s ' % (r.status_code, r.text)
 
 #
-# r = requests.get(url=user_trips_endpoint,
+# r = requests.get(url=user_rides_endpoint,
 #                  headers=headers)
-# trips = r.json()
+#
+# trips = r.json().get('rides')
 # print r.text
 # print 'TRIPS!! count: %s' % len(trips)
-#
+
 # location = {
 #     "latitude": 37.389401339999999,
 #     "longitude": -121.85650542

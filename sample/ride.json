@@ -1,0 +1,77 @@
+{
+  "uuid": "657ea31a-8254-11e5-a866-15c045f7ac21",
+  "type": "ride",
+  "created": 1446573469633,
+  "modified": 1446573469633,
+  "metadata": {
+    "connecting": {
+      "rides": "/users/1b627bda-7de5-11e5-8ca8-b73b340cf271/rides/657ea31a-8254-11e5-a866-15c045f7ac21/connecting/rides"
+    },
+    "path": "/users/1b627bda-7de5-11e5-8ca8-b73b340cf271/rides/657ea31a-8254-11e5-a866-15c045f7ac21",
+    "connections": {
+      "beginsat": "/users/1b627bda-7de5-11e5-8ca8-b73b340cf271/rides/657ea31a-8254-11e5-a866-15c045f7ac21/beginsat",
+      "endsat": "/users/1b627bda-7de5-11e5-8ca8-b73b340cf271/rides/657ea31a-8254-11e5-a866-15c045f7ac21/endsat"
+    }
+  },
+  "summary": {
+    "distanceTraveled": {
+      "meters": 29435,
+      "miles": 18.290106503287063
+    },
+    "reference": {
+      "busEmissionsPerMile": 0.107,
+      "autoEmissionsPerGallon": 8.91,
+      "averageFuelEfficiencyMpg": 23.6,
+      "smallCarEfficiencyMpg": 40,
+      "mediumCarEfficiencyMpg": 30,
+      "truckEfficiencyMpg": 17
+    },
+    "savings": {
+      "savingsReference": "http://www.carbonfund.org/how-we-calculate",
+      "averageCarEfficiencyMpg": 23.6,
+      "versusAverage": 4.948248813652002,
+      "smallCarEfficiencyMpg": 40,
+      "versusSmallCar": 2.1170798277554774,
+      "mediumCarEfficiencyMpg": 30,
+      "versusMediumCar": 3.475120235624542
+    },
+    "emissions": {
+      "emitted": 1.9570413958517157,
+      "units": "kg"
+    }
+  },
+  "start": {
+    "latitude": 37.249785941,
+    "timestamp": 1446573524000,
+    "longitude": -121.910323904
+  },
+  "stop": {
+    "latitude": 37.418700341,
+    "timestamp": 1446573564000,
+    "longitude": -122.145162534
+  },
+  "username": "fb_10207055103964426",
+  "waypoints": [
+    {
+      "latitude": 37.291006543,
+      "timestamp": 1446573534000,
+      "longitude": -121.986050814,
+      "beacon_data": {
+        "uuid": "123",
+        "major": 1.0,
+        "minor": 2.0,
+        "strength": -87
+      }
+    },
+    {
+      "latitude": 37.326974251,
+      "timestamp": 1446573544000,
+      "longitude": -122.014619901
+    },
+    {
+      "latitude": 37.393527478,
+      "timestamp": 1446573554000,
+      "longitude": -122.146020145
+    }
+  ]
+},

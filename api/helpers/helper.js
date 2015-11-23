@@ -1,12 +1,13 @@
 'use strict';
 
-var geolib = require('geolib');
+var geolib = require('geolib'),
+  constants = require('./constants');
 
 
 module.exports.calculateDistanceMeters = function (trip) {
   console.log('calculateDistanceMeters');
 
-  var lastWaypoint = trip['tripBegin'];
+  var lastWaypoint = trip['start'];
   var totalDistanceMeters = 0;
 
   trip.waypoints.forEach(function (thisWaypoint) {
@@ -21,16 +22,23 @@ module.exports.calculateDistanceMeters = function (trip) {
 
   totalDistanceMeters += geolib.getDistance(
     {latitude: lastWaypoint['latitude'], longitude: lastWaypoint['longitude']},
-    {latitude: trip['tripEnd']['latitude'], longitude: trip['tripEnd']['longitude']},
+    {latitude: trip['stop']['latitude'], longitude: trip['stop']['longitude']},
     1);
 
   return totalDistanceMeters;
 };
 
 
-module.exports.getCo2Reference = function (totalDistanceMiles, averageFuelEfficiencyMpg, autoEmissionsPerGallon) {
+module.exports.getCo2ReferenceInKg = function (totalDistanceMiles, averageFuelEfficiencyMpg, autoEmissionsPerGallon) {
   var gallonsRequired = totalDistanceMiles / averageFuelEfficiencyMpg;
-  return gallonsRequired * autoEmissionsPerGallon;
+  var response = gallonsRequired * autoEmissionsPerGallon;
+  return response;
+};
+
+module.exports.getCo2ReferenceInLb = function (totalDistanceMiles, averageFuelEfficiencyMpg, autoEmissionsPerGallon) {
+  var inKg = this.getCo2ReferenceInKg(totalDistanceMiles, averageFuelEfficiencyMpg, autoEmissionsPerGallon);
+  var response = constants.KG_TO_LB * inKg;
+  return response;
 };
 
 

@@ -12,6 +12,7 @@
     "a127-magic": "^0.10.0",
     "request": "",
     "async": "",
+    "lodash": "",
     "usergrid": "",
     "debug": "",
     "q": "",
